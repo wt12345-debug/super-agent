@@ -22,7 +22,7 @@ export const weatherTool = {
         return mockWeather[city] || `未找到${city}城市的天气信息`
     }
 }
-// 会将inputSchema转换为模型需要的json格式
+// ai这个SDK包的jsonSchema函数会将inputSchema转换为模型需要的json格式
 // {
 //   "type": "function",
 //   "function": {

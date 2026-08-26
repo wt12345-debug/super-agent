@@ -4,7 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createMockModel } from './mock-model'
 import { createInterface } from 'readline'
 import { weatherTool } from './tools/utility-tools'
-import { agentLoop } from './agent/loop'
+import { agentLoop,type BudgetState } from './agent/loop'
 const tools = {
     get_weather: weatherTool,
 }
@@ -15,12 +15,14 @@ const qwen = createOpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
 
 })
-const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.7-plus') : createMockModel()
 
-const rl = createInterface({
+
+const rl = createInterface({  // 创建readline接口，用于从命令行读取用户输入
     input: process.stdin,
     output: process.stdout,
 })
+
+const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen-plus-latest') : createMockModel()
 
 // function ask() {
 //     rl.question('\nYou:', async (input) => {
@@ -81,21 +83,24 @@ const rl = createInterface({
 
 // main()
 
+const budget: BudgetState = {used: 0,limit: 15000} //token 预算
 function ask() {
-    rl.question('\nYou:', async (input) => {
+    rl.question('\nYou: ', async (input) => {
         const trimmed = input.trim();
         if (!trimmed || trimmed === 'exit') {
             console.log('Bye!');
             rl.close();
-            return
+            return;
         }
-        messages.push({
-            role: 'user',
-            content: trimmed,
-        })
-        agentLoop(model, tools, messages,system)
+
+        messages.push({ role: 'user', content: trimmed });
+
+        await agentLoop(model, tools, messages, system, budget)
+
         ask()
     })
 }
-console.log('这是owner-Agent v0.2 - Agent-Loop (type "exit" to quit)');
+console.log('这是owner-Agent v0.3 - Agent-Loop (type "exit" to quit)');
+console.log('试试输入：“测试死循环”');
+
 ask()
