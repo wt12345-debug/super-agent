@@ -83,7 +83,7 @@ const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen-plus-latest') : cr
 
 // main()
 
-const budget: BudgetState = {used: 0,limit: 15000} //token 预算
+const budget: BudgetState = {used: 0,limit: 150} //token 预算
 function ask() {
     rl.question('\nYou: ', async (input) => {
         const trimmed = input.trim();
