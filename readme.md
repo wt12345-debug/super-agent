@@ -59,3 +59,33 @@ agent:[调用get_weather工具] 今天南昌天气晴朗，温度在25摄氏度�
 
 
   * 在生产环境中，还要注意这个工具能否和别的工具并发执行
+
+  ## 并发控制
+  1. 模型在一次回复中说要调用多个工具，AI SDK会并发的执行所有带有 execute 属性的工具
+  - 需要 读写锁 来保护工具的执行，防止多个工具同时执行导致的并发问题
+
+  - 经典思路：
+  1. 只读工具：获取共享锁，可以和其他只读工具同时持有
+  2. 读写工具：获取独占锁，必须等所有其他工具执行完毕后，才能执行
+
+  * 假设同时有三个工具要触发，read_file, write_file, write_file。AI SDK 会同时执行三个 execute 方法。但是在执行逻辑之前，先判断该工具是否安全。如果安全，就执行并记录当前有一个工具正在执行。如果不安全，就在队列中塞入阻塞函数，阻止当前的工具执行，直到其他工具执行完毕。才放开阻塞函数进而带来了当前工具的执行。
+  - ToolRegistry 解耦了工具定义和使用
+  - 结果截断
+  - 读写锁的并发控制
+
+  ## 联网搜索
+    1. Tavily 搜索引擎  (免费1000次/月)  -- AI原生
+    2. Serper 搜索引擎  (免费2500次/月)  -- Goole 搜索引擎代理
+
+    - 双引擎实现
+      1. 
+# Agent 接入MCP
+
+  1. 接入 GitHub MCP服务器
+ - MCP 的通信协议 是 JSON RPC 2.0,,传输方式支持 stdio 和 Streamable HTTP.我们只启用 stdio 本地进程，通过标准的输入输出来收发消息
+
+ - 我们的Agent（client）启动一个对接 MCP Server进程，通过stdio 发JSON消息给github mcp server。github mcp server 会向我们的进程中返回JSON消息，我们通过stdout 读取这些消息。
+
+ 1. 握手  --- Client 发initialize method 给Server，Server 返回一个 JSON-RPC 2.0 的response，回复他支持的能力。
+ 2. 发现工具 --- client 发 tools/list method 给Server，Server 返回所有的工具名称、描述、参数schema等信息。
+ 3. 调用工具  --- 模型决定调用某个MCP 工具，client 发 tools/call method 给Server，Server会执行该工具， 返回工具的执行结果。

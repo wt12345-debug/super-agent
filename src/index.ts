@@ -40,7 +40,7 @@ const rl = createInterface({  // 创建readline接口，用于从命令行读取
     output: process.stdout,
 })
 
-const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen-plus-latest') : createMockModel()
+const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.7-plus') : createMockModel()
 
 // function ask() {
 //     rl.question('\nYou:', async (input) => {
@@ -101,7 +101,7 @@ const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen-plus-latest') : cr
 
 // main()
 
-const budget: BudgetState = { used: 0, limit: 15000 } //token 预算
+const budget: BudgetState = { used: 0, limit: 150000 } //token 预算
 function ask() {
     rl.question('\nYou: ', async (input) => {
         const trimmed = input.trim();
@@ -119,6 +119,6 @@ function ask() {
     })
 }
 console.log('这是owner-Agent v0.3 - Agent-Loop (type "exit" to quit)');
-console.log('试试输入：“测试死循环”');
+
 
 ask()
