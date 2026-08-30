@@ -1,124 +1,103 @@
 import 'dotenv/config'
-import { streamText, type ModelMessage, stepCountIs } from 'ai'
+import { type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createMockModel } from './mock-model'
 import { createInterface } from 'readline'
-// import { weatherTool } from './tools/utility-tools'
 import { allTools } from './tools/tools'
 import { ToolRegistry } from './tools/tool-register'
 import { agentLoop, type BudgetState } from './agent/loop'
-// const tools = {
-//     get_weather: weatherTool,
-// }
+import { MCPClient } from './tools/mcp-client'
+
+
+const qwen = createOpenAI({  // 创建 OpenAI 模型, 用于生成文本
+  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  apiKey: process.env.DASHSCOPE_API_KEY,
+})
+const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.8-27b') : createMockModel()
+
+// 注册内置工具
 const registry = new ToolRegistry()
 registry.register(...allTools)
-console.log(`已注册:${registry.getAll().length}个工具`);
-for (const tool of registry.getAll()) {
-    const flags = [
-        tool.isConcurrencySafe ? '可并发' : '串行',
-        tool.isReadOnly ? '只读' : '读写',
-    ].join(', ')
-    console.log(` -- ${tool.name}:${flags}`);
 
+
+// 连接MCP服务器
+async function connectMCP() {
+  const githubToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+
+  let canSpawn = true;
+  try {
+    const { execSync } = await import('node:child_process');
+    execSync('echo test', { stdio: 'ignore' });
+  } catch {
+    canSpawn = false;
+  }
+
+  if (githubToken && canSpawn) {
+    console.log('\n连接 GitHub MCP Server...');
+    try {
+      const client = new MCPClient(
+        'npx', ['-y', '@modelcontextprotocol/server-github'],
+        { GITHUB_PERSONAL_ACCESS_TOKEN: githubToken },
+      );
+      const tools = await registry.registerMCPServer('github', client);
+      console.log(`  已注册 ${tools.length} 个 MCP 工具`);
+      return;
+    } catch (err) {
+      console.log(`  MCP 连接失败: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  if (!githubToken) {
+    console.log('\n未配置 GITHUB_PERSONAL_ACCESS_TOKEN，无法连接 GitHub MCP Server。');
+  }
 }
 
-const messages: ModelMessage[] = []
-const SYSTEM = `你是 Super Agent，一个有工具调用能力的 AI 助手。
-你有以下工具可用：read_file, write_file, list_directory。
-需要查询信息或操作文件时，主动使用工具，不要编造数据。
-可以同时调用多个互不冲突的工具来提高效率。
-回答要简洁直接。`;
-const qwen = createOpenAI({
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    apiKey: process.env.DASHSCOPE_API_KEY,
+async function main() {
+  await connectMCP();
 
-})
+  console.log(`已注册: ${registry.getAll().length} 个工具`);
+  for (const tool of registry.getAll()) {
+    const flags = [
+      tool.isConcurrencySafe ? '可并发' : '串行',
+      tool.isReadOnly ? '只读' : '读写',
+    ].join(', ')
+    console.log(` -- ${tool.name}: ${flags}`)
+  }
 
-
-const rl = createInterface({  // 创建readline接口，用于从命令行读取用户输入
+  const messages: ModelMessage[] = []
+  const rl = createInterface({   // 创建 readline 接口, 用于从命令行读取用户输入
     input: process.stdin,
     output: process.stdout,
-})
+  })
+  const budget: BudgetState = { used: 0, limit: 150000 }  // token 预算
 
-const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.7-plus') : createMockModel()
+  const SYSTEM = `你是 Super Agent，一个有工具调用能力的 AI 助手。
+你有内置工具和 MCP 工具可用。MCP 工具以 mcp__ 开头，如 mcp__github__list_issues。
+需要查询 GitHub 信息时，使用 mcp__github__ 前缀的工具。
+需要操作本地文件时，使用内置工具。
+回答要简洁直接。`;
 
-// function ask() {
-//     rl.question('\nYou:', async (input) => {
-//         const trimmed = input.trim();
-//         if (!trimmed || trimmed === 'exit') {
-//             console.log('Bye!');
-//             rl.close();
-//             return
-//         }
-//         messages.push({
-//             role: 'user',
-//             content: trimmed,
-//         })
-//         const result = streamText({
-//             model: model as any,
-//             system: `你是 Super Agent，一个有工具调用能力的助手。需要时主动使用工具获取信息，不要编造数据`,
-//             tools,
-//             messages,
-//             stopWhen: stepCountIs(5),
-//         })
-//         process.stdout.write('Assistant:')
-//         let response = ''
-//         for await (const part of result.fullStream) {
-//             switch (part.type) {
-//                 case 'text-delta':
-//                     process.stdout.write(part.text)
-//                     response += part.text
-//                     break;
-//                 case 'tool-call':
-//                     console.log(`\n工具调用: ${part.toolName}(${JSON.stringify(part.input)})`)
-//                     break;
-//                 case 'tool-result':
-//                     console.log(`\n [工具返回] ${JSON.stringify(part.output)}`);
-//                     break;
-//             }
-
-//         }
-//         console.log(); //换行
-
-//         messages.push({
-//             role: 'assistant',
-//             content: response,
-//         })
-//         ask()
-//     })
-// }
-
-
-// async function main() {
-//     const result = streamText({
-//         model:model as any,
-//         prompt: '用一句话介绍你自己',
-//     })
-//     for await (const chunk of result.textStream) {
-//         process.stdout.write(chunk)
-//     }
-// }
-
-// main()
-
-const budget: BudgetState = { used: 0, limit: 150000 } //token 预算
-function ask() {
+  function ask() {
     rl.question('\nYou: ', async (input) => {
-        const trimmed = input.trim();
-        if (!trimmed || trimmed === 'exit') {
-            console.log('Bye!');
-            rl.close();
-            return;
-        }
+      const trimmed = input.trim();
+      if (!trimmed || trimmed === 'exit') {
+        console.log('Bye!');
+        rl.close();
+        return;
+      }
 
-        messages.push({ role: 'user', content: trimmed });
+      messages.push({ role: 'user', content: trimmed });
 
-        await agentLoop(model, registry, messages, SYSTEM, budget)
+      await agentLoop(model, registry, messages, SYSTEM, budget)
 
-        ask()
-    })
+      ask()
+    });
+  }
+
+  console.log('Super Agent v0.5 — MCP (type "exit" to quit)\n');
+
+  ask();
+
 }
-console.log('这是owner-Agent v0.3 - Agent-Loop (type "exit" to quit)');
 
-
-ask()
+main().catch(console.error)

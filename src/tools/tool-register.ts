@@ -1,4 +1,5 @@
 import { jsonSchema } from 'ai'
+import type { MCPClient } from './mcp-client'
 export interface ToolDefinition {
     name: string,
     description: string,
@@ -14,6 +15,9 @@ const DEFAULT_MAX_RESULT_CHARS = 3000 //工具执行允许的最大输出字符�
 
 export class ToolRegistry {
     private tools = new Map<string, ToolDefinition>() //工具列表
+    private mcpClients: MCPClient[] = []  // 存放正在连接的 MCP 服务器
+
+
     // 用三个状态变量来构成一把锁
     private exclusiveLock = false;  //当前是否有独占锁的持有者
     private concurrentCount = 0; //当前共享锁的持有者数量
@@ -23,6 +27,44 @@ export class ToolRegistry {
             this.tools.set(tool.name, tool)
         }
     }
+
+    async registerMCPServer(serverName: string, client: MCPClient): Promise<string[]> {   // 注册 MCP 服务中的工具
+    await client.connect()  // 连接 MCP 服务器
+    this.mcpClients.push(client)  // 存储 MCP 服务器连接
+ 
+    const tools = await client.listTools()  // 获取 MCP 服务器中的工具列表
+    const registered: string[] = []
+    
+    for (const tool of tools) {
+      const prefixedName = `mcp__${serverName}__${tool.name}`
+      if (this.tools.has(prefixedName)) continue
+
+      const toolClient = client
+      const originalName = tool.name
+
+      this.register({
+        name: prefixedName,
+        description: `[MCP:${serverName}] ${tool.description}`,
+        parameters: tool.inputSchema as Record<string, unknown>,
+        isConcurrencySafe: true,
+        isReadOnly: true,
+        maxResultChars: 3000,
+        execute: async (input: any) => {
+          return toolClient.callTool(originalName, input)
+        },
+      })
+
+      registered.push(prefixedName)  
+    }
+
+    return registered
+  }
+    async closeAllMCP(): Promise<void> {  // 关闭所有 MCP 服务器连接
+    for (const client of this.mcpClients) {
+      await client.close()
+    }
+    this.mcpClients = []
+  }
     get(name: string) {// 根据工具名称获取工具定义
         return this.tools.get(name)
     }
