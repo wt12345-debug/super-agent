@@ -9,6 +9,8 @@ export interface ToolDefinition {
     isConcurrencySafe?: boolean, //能否并行
     isReadOnly?: boolean,  //是否只读
     maxResultChars?: number, //最大结果字符数
+    shouldDefer?: boolean, //是否延迟加载
+    searchHint?: string, //搜索提示
 }
 const DEFAULT_MAX_RESULT_CHARS = 3000 //工具执行允许的最大输出字符数
 
@@ -22,6 +24,10 @@ export class ToolRegistry {
     private exclusiveLock = false;  //当前是否有独占锁的持有者
     private concurrentCount = 0; //当前共享锁的持有者数量
     private waitQueue: Array<() => void> = [] // 等待队列，阻塞等待中的 resolve 函数
+
+    // 已发现的延迟工具列表
+    private discoveredTools = new Set<string>()
+
     register(...tools: ToolDefinition[]): void {// 将来在任何地方定义的工具，都直接通过register方法注册，被存入tools Map工具列表
         for (const tool of tools) {
             this.tools.set(tool.name, tool)
@@ -29,42 +35,42 @@ export class ToolRegistry {
     }
 
     async registerMCPServer(serverName: string, client: MCPClient): Promise<string[]> {   // 注册 MCP 服务中的工具
-    await client.connect()  // 连接 MCP 服务器
-    this.mcpClients.push(client)  // 存储 MCP 服务器连接
- 
-    const tools = await client.listTools()  // 获取 MCP 服务器中的工具列表
-    const registered: string[] = []
-    
-    for (const tool of tools) {
-      const prefixedName = `mcp__${serverName}__${tool.name}`
-      if (this.tools.has(prefixedName)) continue
+        await client.connect()  // 连接 MCP 服务器
+        this.mcpClients.push(client)  // 存储 MCP 服务器连接
 
-      const toolClient = client
-      const originalName = tool.name
+        const tools = await client.listTools()  // 获取 MCP 服务器中的工具列表
+        const registered: string[] = []
 
-      this.register({
-        name: prefixedName,
-        description: `[MCP:${serverName}] ${tool.description}`,
-        parameters: tool.inputSchema as Record<string, unknown>,
-        isConcurrencySafe: true,
-        isReadOnly: true,
-        maxResultChars: 3000,
-        execute: async (input: any) => {
-          return toolClient.callTool(originalName, input)
-        },
-      })
+        for (const tool of tools) {
+            const prefixedName = `mcp__${serverName}__${tool.name}`
+            if (this.tools.has(prefixedName)) continue
 
-      registered.push(prefixedName)  
+            const toolClient = client
+            const originalName = tool.name
+
+            this.register({
+                name: prefixedName,
+                description: `[MCP:${serverName}] ${tool.description}`,
+                parameters: tool.inputSchema as Record<string, unknown>,
+                isConcurrencySafe: true,
+                isReadOnly: true,
+                maxResultChars: 3000,
+                execute: async (input: any) => {
+                    return toolClient.callTool(originalName, input)
+                },
+            })
+
+            registered.push(prefixedName)
+        }
+
+        return registered
     }
-
-    return registered
-  }
     async closeAllMCP(): Promise<void> {  // 关闭所有 MCP 服务器连接
-    for (const client of this.mcpClients) {
-      await client.close()
+        for (const client of this.mcpClients) {
+            await client.close()
+        }
+        this.mcpClients = []
     }
-    this.mcpClients = []
-  }
     get(name: string) {// 根据工具名称获取工具定义
         return this.tools.get(name)
     }
@@ -72,42 +78,44 @@ export class ToolRegistry {
         return [...this.tools.values()]
     }
     //获取共享锁
-    private async acquireConcurrent() :Promise<void>{
-        while(this.exclusiveLock){
+    private async acquireConcurrent(): Promise<void> {
+        while (this.exclusiveLock) {
             await new Promise<void>(resolve => this.waitQueue.push(resolve))
         }
         this.concurrentCount++
     }
     //释放共享锁
-    private releaseConcurrent():void{
+    private releaseConcurrent(): void {
         this.concurrentCount--
-        if(this.concurrentCount === 0)this.drainQueue(); // 释放共享锁后，检查是否有等待中的 resolve 函数
-       
+        if (this.concurrentCount === 0) this.drainQueue(); // 释放共享锁后，检查是否有等待中的 resolve 函数
+
     }
     //获取独占锁
-    private async acquireExclusive() :Promise<void>{
-        while(this.exclusiveLock || this.concurrentCount > 0){ //当有独占锁或共享锁时，等待队列中添加 resolve 函数，阻塞等待
-            await new Promise<void>(resolve => this.waitQueue.push(resolve)) 
+    private async acquireExclusive(): Promise<void> {
+        while (this.exclusiveLock || this.concurrentCount > 0) { //当有独占锁或共享锁时，等待队列中添加 resolve 函数，阻塞等待
+            await new Promise<void>(resolve => this.waitQueue.push(resolve))
         }
         this.exclusiveLock = true
     }
     //释放独占锁
-    private releaseExclusive():void{
+    private releaseExclusive(): void {
         this.exclusiveLock = false
         this.drainQueue(); // 释放独占锁后，检查是否有等待中的 resolve 函数
     }
     //锁释放时，把等待队列中的 resolve 全部唤醒，让他们重新去抢锁
-    private drainQueue():void{
+    private drainQueue(): void {
         const waiting = this.waitQueue.splice(0)
-        for(const resolve of waiting){
+        for (const resolve of waiting) {
             resolve()
         }
-        
+
     }
 
     toAISDKFormat(): Record<string, any> {
         const result: Record<string, any> = {};
-        for (const [name, tool] of this.tools) {
+        const activeTools = this.getActiveTools()
+        for (const tool of activeTools) {
+            const name = tool.name
             const maxChars = tool.maxResultChars;
             const executeFn = tool.execute;
             const isSafe = tool.isConcurrencySafe === true;
@@ -140,6 +148,48 @@ export class ToolRegistry {
             };
         }
         return result;
+    }
+    //搜索工具
+    searchTools(query: string): ToolDefinition[] {
+        const q = query.trim() //'mcp__github__list__issues,mcp__github__create__issue'
+        const results: ToolDefinition[] = []
+        //去 Map对象中搜索哪个值(对象)拥有 searchHint 属性，且 searchHint 包含 q 中的字符串
+        const names = q.includes(',') ? q.split(',').map(n => n.trim()).filter(Boolean) : [q]
+        for (const name of names) {
+            const tool = this.tools.get(name) //去 Map对象中搜索 name 对应的工具
+            if (tool && tool.name !== 'tool_search') {
+                results.push(tool)
+                //记录被搜到的延迟工具
+                this.discoveredTools.add(tool.name)
+            }
+        }
+        return results
+    }
+
+    // 可以被添加进 prompt 中的工具
+    getActiveTools(): ToolDefinition[] {
+        return this.getAll().filter(tool => {
+            if (tool.shouldDefer && !this.discoveredTools.has(tool.name)) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    // 生成延迟工具的名字列表
+    getDeferredToolSummary(): string {
+        const deferred = this.getAll().filter(tool => {
+            return tool.shouldDefer && !this.discoveredTools.has(tool.name);
+        });
+
+        if (deferred.length === 0) return '';
+
+        const lines = deferred.map(t => {
+            const hint = t.searchHint ? ` — ${t.searchHint}` : '';
+            return `  - ${t.name}${hint}`;  // “工具名 — 搜索提示 eg: - mcp__notion__search_pages -notion search pages documents”格式
+        });
+
+        return `\n以下工具可用，但需要先通过 tool_search 搜索获取完整定义：\n${lines.join('\n')}`;
     }
 }
 
