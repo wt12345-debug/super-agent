@@ -79,7 +79,7 @@ agent:[调用get_weather工具] 今天南昌天气晴朗，温度在25摄氏度�
 
     - 双引擎实现
       1. 
-# Agent 接入MCP
+## Agent 接入MCP
 
   1. 接入 GitHub MCP服务器
  - MCP 的通信协议 是 JSON RPC 2.0,,传输方式支持 stdio 和 Streamable HTTP.我们只启用 stdio 本地进程，通过标准的输入输出来收发消息
@@ -89,3 +89,46 @@ agent:[调用get_weather工具] 今天南昌天气晴朗，温度在25摄氏度�
  1. 握手  --- Client 发initialize method 给Server，Server 返回一个 JSON-RPC 2.0 的response，回复他支持的能力。
  2. 发现工具 --- client 发 tools/list method 给Server，Server 返回所有的工具名称、描述、参数schema等信息。
  3. 调用工具  --- 模型决定调用某个MCP 工具，client 发 tools/call method 给Server，Server会执行该工具， 返回工具的执行结果。
+
+## ToolSearch 延迟加载
+ - 把不常用的工具藏起来，模型需要的时候才按需搜索，按需发现。将Prompt 中的工具数量从几十个减到几个，同时又不损失Agent的能力。
+
+ - 工具分类：
+  1. 核心工具：几乎每次都要用到的工具， Read,Write,Edit,Bash,Grep,Glob
+  2. 低频工具：偶尔使用，需要的，直接打上标记 shouldDefer: true,比如 WebSearch
+      NotionSearch,所有MCP接入的工具
+
+  - claudeCode细节：工具被标记为 shouldDefer:true,但这个延迟工具的 Schema 如果没有超过上下文窗口的10%,那么依然不延迟加载。
+
+  - 打造元工具:tool_search:
+    用户输入 -> Agent ->LLM -> LLM发现无法处理问题 Agent就调用 tool_search 工具 ->找到了需要的工具就执行 -> 执行结果返回给LLM -》LLM继续回复
+
+  - 核心工具全量携带进Prompt，延迟工具也要将自己的名字和能搜到他的关键词携带进Prompt
+
+## 我们的Agent做了什么
+ 1. 搭建了一个 ToolRegistry 模块，统一注册和管理所有的工具，加了截断和读写锁。
+ 2. 通过MCP协议，接入了 Github MCP服务
+ 3. 实现了 ToolSearch 延迟加载功能,解决了工具数量过大，模型注意力被稀释，上下文被占用的问题。
+
+
+# 上下文工程
+  ## 记忆系统(持久化上下文)  --- 对话存档
+  1. SQLite 数据库
+  2. Redis 缓存
+  3. JSON 文件
+
+  - 我们选择用JSONL （JSON Lines）格式，因为JSONL格式简单，易读，易写
+  1. 不怕崩溃，最多就是最后一条数据丢失
+  2. 可调试，直接人为打开文件，查看数据。
+  3. 零依赖，不需要安装任何库
+
+  ## 系统提示词处理  ---- 让系统提示词(system_prompt) 变得可维护，可扩展
+   - 设计了 Prompt Pipe 模式，将系统提示词(system_prompt) 分成多个部分，每个部分都有负责不同的功能
+    1. 核心规则 --- 介绍Super Agent 的核心规则功能和限制。
+    2. 工具引导 --- 介绍所有的工具，包括核心工具和延迟工具。
+    3. 会话上下文 --- 介绍当前会话的上下文，包括用户输入、模型回复、工具调用等。
+    4. 会话ID --- 用于唯一标识当前会话，方便恢复会话。
+
+    - 1234这个拼接顺序是不能打乱的，应该保证不容易发生变更的模块放在最前面，因为 LLM 的KV Cache(在预测当前token时，将上一个token的预测结果作为输入，避免重复预测)会依赖于上一个token的预测结果，所以容易变跟提示词模块如果放在前面，会导致完整的系统提示词全部无法命中缓存。
+
+  ## 上下文压缩

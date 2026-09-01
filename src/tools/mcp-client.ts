@@ -27,6 +27,7 @@ export class MCPClient {
   constructor(private command: string, private args: string[], private env?: Record<string, string>) {
     this.serverName = args[args.length - 1]?.replace(/^@.*\//, '') || 'mcp-server'
   }
+  
 
   async connect(): Promise<void> {
     // Windows 下 pnpm 是 .cmd 脚本，spawn 需经 shell 才能找到；

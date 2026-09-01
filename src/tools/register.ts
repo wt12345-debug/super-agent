@@ -55,6 +55,8 @@ export class ToolRegistry {
                 isConcurrencySafe: true,
                 isReadOnly: true,
                 maxResultChars: 3000,
+                shouldDefer: true,
+                searchHint: `${serverName} ${tool.name} ${tool.description}`,
                 execute: async (input: any) => {
                     return toolClient.callTool(originalName, input)
                 },
@@ -190,6 +192,25 @@ export class ToolRegistry {
         });
 
         return `\n以下工具可用，但需要先通过 tool_search 搜索获取完整定义：\n${lines.join('\n')}`;
+    }
+    // 估算 token
+    countTokenEstimate():{active:number, deferred:number, total:number} {
+        let active = 0;
+        let deferred = 0;
+        for(const tool of this.getAll()){
+            const SchemaSize = JSON.stringify({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+            }).length
+            const tokens = Math.ceil(SchemaSize /4)
+            if(tool.shouldDefer && !this.discoveredTools.has(tool.name)){
+                deferred += tokens
+            }else{
+                active += tokens
+            }
+        }
+        return {active, deferred, total: active + deferred}
     }
 }
 

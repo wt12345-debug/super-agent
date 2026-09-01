@@ -1,4 +1,4 @@
-import type { ToolDefinition } from './tool-register'
+import type { ToolDefinition } from './register'
 import TurndownService from 'turndown'
 // Tavily 搜索引擎
 export const tavilySearchTool: ToolDefinition = {
