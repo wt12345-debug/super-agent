@@ -3,6 +3,7 @@ import { readFileTool, writeFileTool, editFileTool, listDirectoryTool } from './
 import { bashTool } from './shell-tools'
 import { globTool, grepTool } from './search-tools'
 import { pickSearchTool, webFetchTool } from './web-search'
+
 export const allTools: ToolDefinition[] = [
     readFileTool,
     writeFileTool,
