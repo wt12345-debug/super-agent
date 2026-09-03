@@ -11,17 +11,21 @@ import { SessionStore } from './session/store'
 import { PromptBuilder, coreRules, toolGuide, deferredTools, sessionContext, type PromptContext } from './context/prompt-builder'
 import { summarize, estimateTokens, microcompact } from './context/compressor'
 import { applyDefense, estimateMessageTokens, TokenTracker } from './context/defense'
-import { textToolResultOutput } from './context/tool-result-output'
+import { UsageTracker } from './usage/tracker'
 
 const qwen = createOpenAI({  // 创建 OpenAI 模型, 用于生成文本
   baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKey: process.env.DASHSCOPE_API_KEY,
 })
-const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.8-27b') : createMockModel()
+const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.8-flash') : createMockModel()
 
 // 注册内置工具
 const registry = new ToolRegistry()
 registry.register(...allTools)
+
+
+// 成本追踪
+const tracker = new UsageTracker('.usage/today.jsonl')
 
 // 注册 tool_search 元工具
 const toolSearchTool: ToolDefinition = {
@@ -93,21 +97,7 @@ async function main() {
   }
 
 
-  // const allCount = registry.getAll().length;
-  // const activeTools = registry.getActiveTools();
-  // const estimatedTokens = registry.countTokenEstimate();
-  // console.log(`\n====工具统计====`);
-  // console.log(`总工具数: ${allCount}`);
-  // console.log(`活跃工具数: ${activeTools.length} 个`);
-  // console.log(`延迟工具数：${allCount - activeTools.length} 个`);
-  // console.log(`估算 token 数：~${estimatedTokens.active} (活跃) + ~${estimatedTokens.deferred} (延迟,不占prompt)`);
-
-  //   const deferredSummary = registry.getDeferredToolSummary();  //获取延迟工具的摘要
-  //   const SYSTEM = `你是 Super Agent，一个有工具调用能力的 AI 助手。
-  // 你有内置工具和 MCP 工具可用。
-  // 如果你需要的工具不在当前列表中，使用 tool_search 工具搜索可用工具。
-  // 回答要简洁直接。${deferredSummary}`;
-  //Prompt Pipe 组装系统提示词（system prompt）
+  
   const builder = new PromptBuilder()
     .pipe('coreRules', coreRules())
     .pipe('toolGuide', toolGuide())
@@ -180,7 +170,7 @@ async function main() {
       store.append(userMsg);
 
       const beforeLen = messages.length;
-      await agentLoop(model, registry, messages, SYSTEM)
+      await agentLoop(model, registry, messages, SYSTEM, tracker)
       //持久化 本轮新增加的消息 （包含Agent Loop中会往messages里面push的消息）
       const newMessages = messages.slice(beforeLen) //比如先前已有10条消息，用户输入了1条消息，原来messages中有了11条消息，那么newMessages就是这个问题模型回复的消息
       store.appendAll(newMessages)  // 追加的只有AgentLoop产生的消息
