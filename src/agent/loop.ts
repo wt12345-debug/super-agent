@@ -4,9 +4,9 @@ import { isRetryable, calculateDelay, sleep } from './retry'
 import { ToolRegistry } from '../tools/register'
 import { type UsageTracker, normalizeUsage } from '../usage/tracker'
 
-const MAX_STEPS = 15 // 最大循环次数
+const MAX_STEPS = 50 // 最大循环次数
 const MAX_RETRIES = 3 // 最大重试次数
-const TOKEN_BUDGET = 50000 // token 预算
+const TOKEN_BUDGET = 500000 // token 预算
 export interface BudgetState {
   used: number
   limit: number

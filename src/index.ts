@@ -18,9 +18,10 @@ import {  contextCommands } from './command/context'
 import { debugCommands } from './command/debug'
 import { memoryCommands } from './command/memory'
 import { createMemoryTool } from './tools/memory-tools'
-
-
-
+import { ragCommands } from './command/rag'
+import { VectorStore } from './rag/store'
+import { createDashScopeEmbedder, embed } from './rag/embedder'
+import { createRagTools } from './tools/rag-tools'
 const qwen = createOpenAI({  // 创建 OpenAI 模型, 用于生成文本
   baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKey: process.env.DASHSCOPE_API_KEY,
@@ -79,7 +80,14 @@ const dispatch = createDispatcher([
   ...debugCommands,
   ...memoryCommands,
   ...contextCommands,
+  ...ragCommands,
 ])
+
+// ------------------- RAG ------------------------
+const vectorStore = new VectorStore()
+const embedFn = createDashScopeEmbedder(process.env.DASHSCOPE_API_KEY as string)
+registry.register(...createRagTools(vectorStore, embedFn))
+
 async function main() {
   await connectMCP();
   // Session 持久化
@@ -125,7 +133,7 @@ async function main() {
       }
       const ctx: CommandContext = {
         messages, timestamps, registry, builder, tracker,
-        sessionStore: store, model, makePromptCtx, ask, memoryStore
+        sessionStore: store, model, makePromptCtx, ask, memoryStore, vectorStore
       }
       const handled = dispatch(trimmed, ctx)   // 处理用户输入，如果是指令...
       if (handled === 'async') return
@@ -160,6 +168,8 @@ async function main() {
   console.log(`  /memory search     - 搜索记忆`);
   console.log(`  /context           - 终端里看 context 占用矩阵`);
   console.log(`  /usage            - 累计 token 用量和成本`);
+  console.log(`  /rag               - 查看知识库状态`);
+    console.log(`  ingest <path>      - 从文件导入知识`);
   console.log(`  status            - 当前消息数、token 和记忆数`);
   console.log('');
   console.log(` 已加载 ${memoryStore.list().length} 条历史记忆`);
