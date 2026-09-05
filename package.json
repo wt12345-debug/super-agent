@@ -20,6 +20,7 @@
   },
   "type": "module",
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
@@ -29,8 +30,10 @@
     "@modelcontextprotocol/server-github": "^2025.4.8",
     "@types/turndown": "^5.0.6",
     "ai": "^7.0.77",
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
+    "sqlite-vec": "^0.1.9",
     "turndown": "^7.2.4"
   }
 }

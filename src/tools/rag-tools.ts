@@ -3,9 +3,9 @@ import type { ToolDefinition } from './register.js';
 import { chunkDocument } from '../rag/chunker.js';
 import { embed, type EmbeddingFn } from '../rag/embedder.js';
 import { VectorStore } from '../rag/store.js';
-// import { hybridSearch } from '../rag/search.js';
-
-export function createRagTools(vectorStore: VectorStore, embedFn: EmbeddingFn): ToolDefinition[] {
+import { hybridSearch } from '../rag/search.js';  //导入混合检索函数
+import { SqliteVectorStore } from '../rag/sqlite-store.js';
+export function createRagTools(vectorStore: SqliteVectorStore, embedFn: EmbeddingFn): ToolDefinition[] {
   const ragIngestTool: ToolDefinition = {
     name: 'rag_ingest',
     description: '将文档导入知识库。path 为文件路径，内容会被分块、向量化后存储。',
@@ -30,29 +30,30 @@ export function createRagTools(vectorStore: VectorStore, embedFn: EmbeddingFn): 
     },
   };
 
-//   const ragSearchTool: ToolDefinition = {
-//     name: 'rag_search',
-//     description: '从知识库中搜索相关信息。返回最相关的文档片段。',
-//     parameters: {
-//       type: 'object',
-//       properties: {
-//         query: { type: 'string', description: '搜索查询' },
-//         top_k: { type: 'number', description: '返回结果数量（默认 5）' },
-//       },
-//       required: ['query'],
-//       additionalProperties: false,
-//     },
-//     isConcurrencySafe: true,
-//     isReadOnly: true,
-//     execute: async ({ query, top_k }: { query: string; top_k?: number }) => {
-//       if (vectorStore.size() === 0) return '知识库为空，请先使用 rag_ingest 导入文档。';
-//       const results = await hybridSearch(vectorStore, embedFn, query, top_k || 5);
-//       if (results.length === 0) return `没有找到与 "${query}" 相关的内容。`;
-//       return results.map((r, i: number) =>
-//         `[${i + 1}] 来源: ${r.chunk.source} | 综合分: ${r.score.toFixed(3)} (向量: ${r.vectorScore.toFixed(2)}, 关键词: ${r.keywordScore.toFixed(2)})\n${r.chunk.text.slice(0, 500)}`
-//       ).join('\n\n---\n\n');
-//     },
-//   };
+  const ragSearchTool: ToolDefinition = {
+    name: 'rag_search',
+    description: '从知识库中搜索相关信息。返回最相关的文档片段。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '搜索查询' },
+        top_k: { type: 'number', description: '返回结果数量（默认 5）' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    isConcurrencySafe: true,
+    isReadOnly: true,
+    execute: async ({ query, top_k }: { query: string; top_k?: number }) => {
+      if (vectorStore.size() === 0) return '知识库为空，请先使用 rag_ingest 导入文档。';
+      // const results = await hybridSearch(vectorStore, embedFn, query, top_k || 5);
+      const results = await vectorStore.hybridSearch( embedFn, query, top_k || 5);
+      if (results.length === 0) return `没有找到与 "${query}" 相关的内容。`;
+      return results.map((r, i: number) =>
+        `[${i + 1}] 来源: ${r.chunk.source} | 综合分: ${r.score.toFixed(3)} (向量: ${r.vectorScore.toFixed(2)}, 关键词: ${r.keywordScore.toFixed(2)})\n${r.chunk.text.slice(0, 500)}`
+      ).join('\n\n---\n\n');
+    },
+  };
 
-  return [ragIngestTool];
+  return [ragIngestTool,ragSearchTool];
 }
