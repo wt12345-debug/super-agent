@@ -17,6 +17,7 @@ import { createDispatcher, type CommandContext } from './command/index'
 import { contextCommands } from './command/context'
 import { debugCommands } from './command/debug'
 import { memoryCommands } from './command/memory'
+import { dreamCommands } from './command/dream'
 import { createMemoryTool } from './tools/memory-tools'
 import { ragCommands } from './command/rag'
 import { VectorStore } from './rag/store'
@@ -85,6 +86,7 @@ const dispatch = createDispatcher([
   ...memoryCommands,
   ...contextCommands,
   ...ragCommands,
+  ...dreamCommands,
 ])
 
 // ------------------- RAG ------------------------

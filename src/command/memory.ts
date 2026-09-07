@@ -19,4 +19,19 @@ export const memoryCommands: CommandHandler[] = [
     console.log('');
     return true;
   },
+  (cmd, ctx) => {
+    if (cmd !== '/lint' && cmd !== 'lint') return false;
+    const reports = ctx.memoryStore!.lint();
+    if (reports.length === 0) {
+      console.log('\n[lint] 记忆库健康，没有发现问题。\n');
+      return true;
+    }
+    console.log(`\n[lint] 记忆库 ${reports.length} 条有警告：`);
+    for (const r of reports) {
+      console.log(`  📁 ${r.entry.filePath.split('/').pop()}  [${r.entry.type}] ${r.entry.name}`);
+      for (const issue of r.issues) console.log(`     • ${issue.kind}: ${issue.message}`);
+    }
+    console.log('');
+    return true;
+  },
 ];
