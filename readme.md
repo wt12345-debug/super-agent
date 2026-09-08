@@ -233,3 +233,66 @@ agent:[调用get_weather工具] 今天南昌天气晴朗，温度在25摄氏度�
      * 该存放：只存在对话中，其他地方推导不出来
 
 # SKILL 机制
+  - 就是一份提示词，用来约束Agent的行为，让Agent拥有一套自己的行为规范。
+
+  - Skill 不是 tool
+   1. Tool 是一个可执行函数，是一个原子操作，read_file工具不会告诉Agent应该读哪些文件的
+   2. Skill是一份知识文档，一份用Markdown格式编写的行为指导，应该注入System Prompt 中，让Agent 知道自己的行为规范
+
+   .skills/
+       code-review/
+          SKILL.md
+        research/
+          SKILL.md
+
+
+  ## 格式 YAML frontmatter 格式
+  -----------------
+  name: code-review
+  description: "以高级工程师的视角来审查代码变更"
+  --------------------
+
+  # code-review
+  ## 审查流程
+  1. 收集变更范围 从git log 中获取变更范围，包括变更的文件、变更的行号、变更的内容等
+  2. 审查变更内容 对变更的内容进行审查，判断是否有问题，是否有错误，是否有安全问题等
+
+
+  ## 写好一个skill
+  1. 做什么 (审查代码的变更)
+  2. 怎么做 (按照什么步骤，优先级来执行)
+  3. 输出什么 （报告的格式）
+
+  # plugin 机制
+    - 让别人可以给你的agent写功能
+
+    - 设计一个Plugin 接口
+      1. 你是谁(名称、版本、描述)
+      2. 你要注册的是什么(工具、skill)
+      3. 你什么时候退出(清理资源)
+
+    - 总结：
+     1. 接口契约：(PluginDefinition)定义了一个插件应该长什么样子
+     2. API隔离： （PluginApi）将api暴露给插件，让每一个插件都能独立借助api来注册自己的工具，不需要agent自己注册工具
+     3. 命名隔离：（PluginName__ToolName） 防止不同插件的工具名冲突
+     4. 生命周期管理：(activate，destory)插件的加载、卸载、激活、停用等生命周期管理
+
+     * skill是往 System Prompt 中注入知识，改变的是Agent怎么思考。Plugin 是往Agent执行过程中注入工具，改变的是Agent能做什么。
+
+     * plugin 就是针对某一个独立场景扩展的一套工具。比如
+
+    # 权限系统 + HOOK 管线
+     - 角色权限 -- 谁能用什么工具
+     - Bash风险监测 -- 拦截危险命令
+     - Hook管线 -- 在工具执行前后，插入自定义的代码，比如日志、监控、权限校验等
+
+     ## 角色权限
+      1. owner -- 能使用所有的工具，包括Bash
+      2. collaborator -- 大部分工具都能用，但是不能用Bash
+      3. guest -- 只能用读写工具（查天气，读文件，做搜索）
+
+      ### Bash 风险监测
+      即使是 owner 角色，也不能用危险的 Bash 命令，比如 rm -rf /、sudo、curl xxx | sh 等
+
+      ### Hook管线
+        - 在工具执行前后，插入一个钩子函数，来执行一些自定义的逻辑

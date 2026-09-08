@@ -1,5 +1,11 @@
 import { jsonSchema } from 'ai'
 import type { MCPClient } from './mcp-client'
+import { canUseTool, type Role } from '../security/roles'
+import { classifyBashCommand } from '../security/bash-classifier'
+import type { HookPipeline } from '../security/hook'
+
+
+
 export interface ToolDefinition {
     name: string,
     description: string,
@@ -27,11 +33,29 @@ export class ToolRegistry {
 
     // 已发现的延迟工具列表
     private discoveredTools = new Set<string>()
-
+    private currentRole: Role = 'owner' // 当前角色，默认owner
+    private hookPipeline: HookPipeline | null = null // hook 管线，默认null 
     register(...tools: ToolDefinition[]): void {// 将来在任何地方定义的工具，都直接通过register方法注册，被存入tools Map工具列表
         for (const tool of tools) {
             this.tools.set(tool.name, tool)
         }
+    }
+
+    //切换权限角色
+    setRole(role: Role): void {
+        this.currentRole = role
+    }
+    getRole(): Role {
+        return this.currentRole
+    }
+    // hook 管线
+    setHookPipeline(pipeline: HookPipeline) {
+        this.hookPipeline = pipeline
+    }
+    unregister(name: string): void {// 注销工具
+        this.discoveredTools.delete(name)
+        this.tools.delete(name)
+
     }
 
     async registerMCPServer(serverName: string, client: MCPClient): Promise<string[]> {   // 注册 MCP 服务中的工具
@@ -115,35 +139,71 @@ export class ToolRegistry {
 
     toAISDKFormat(): Record<string, any> {
         const result: Record<string, any> = {};
-        const activeTools = this.getActiveTools()
+        const activeTools = this.getActiveTools();  // 
+
         for (const tool of activeTools) {
-            const name = tool.name
             const maxChars = tool.maxResultChars;
             const executeFn = tool.execute;
             const isSafe = tool.isConcurrencySafe === true;
             const registry = this;
-            result[name] = {
+            const toolName = tool.name
+
+            const hookPipeline = registry.hookPipeline
+
+            result[tool.name] = {
                 description: tool.description,
                 inputSchema: jsonSchema(tool.parameters as any),
                 execute: async (input: any) => {
+                    // Bash 风险检测
+                    if (toolName === 'bash' && input?.command) {
+                        const risk = classifyBashCommand(input.command)
+                        if (risk.Level === 'dangerous') {
+                            return `[拒绝执行] 检测到危险操作：${risk.reason}\n命令：${input.command}`
+                        }
+                        if (risk.Level === 'moderate') {
+                            console.log(`  [安全警告] 操作：${risk.reason}\n命令：${input.command}`)
+                        }
+                    }
+
+                    // pre hook
+                    if (hookPipeline) {
+                        const preResult = await hookPipeline.runPre(toolName, input)
+                        if (preResult.action === 'block') {
+                            return `[Hook 拦截] ${preResult.reason || '操作被阻止'}`
+                        }
+                        if (preResult.action === 'modify' && preResult.modifiedInput !== undefined) {
+                            input = preResult.modifiedInput
+                        }
+                    }
+
                     // 在真正执行前，先按 isConcurrencySafe 来获取锁
                     if (isSafe) {
                         await registry.acquireConcurrent();
-                        console.log(`[并发]${name}获取共享锁`);
+                        console.log(` [并发] ${tool.name} 获取共享锁`);
                     } else {
                         await registry.acquireExclusive();
-                        console.log(`[独占]${name}获取独占锁,等待其他工具完成`);
+                        console.log(` [串行] ${tool.name} 获得独占锁，等待其他工具完成`);
                     }
+
                     try {
                         const raw = await executeFn(input);
                         const text = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
-                        return truncateResult(text, maxChars);
+                        let output = truncateResult(text, maxChars);
+                        // Post Hook
+                        if (hookPipeline) {
+                            const postResult = await hookPipeline.runPost(toolName, input, output)
+                            if (postResult.modifiedOutput !== undefined) {
+                                output = String(postResult.modifiedOutput)
+                            }
+                        }
+                        return output
+
                     } finally {
-                        // 无论是否出错，都释放锁
+                        // 无论是否成功，都释放锁
                         if (isSafe) {
-                            registry.releaseConcurrent(); // 释放共享锁
+                            registry.releaseConcurrent();  // 释放共享锁
                         } else {
-                            registry.releaseExclusive(); // 释放独占锁
+                            registry.releaseExclusive();  // 释放独占锁
                         }
                     }
                 },
@@ -174,6 +234,9 @@ export class ToolRegistry {
             if (tool.shouldDefer && !this.discoveredTools.has(tool.name)) {
                 return false;
             }
+            if (canUseTool(this.currentRole, tool.name)) {
+                return false;
+            }
             return true;
         });
     }
@@ -194,23 +257,23 @@ export class ToolRegistry {
         return `\n以下工具可用，但需要先通过 tool_search 搜索获取完整定义：\n${lines.join('\n')}`;
     }
     // 估算 token
-    countTokenEstimate():{active:number, deferred:number, total:number} {
+    countTokenEstimate(): { active: number, deferred: number, total: number } {
         let active = 0;
         let deferred = 0;
-        for(const tool of this.getAll()){
+        for (const tool of this.getAll()) {
             const SchemaSize = JSON.stringify({
                 name: tool.name,
                 description: tool.description,
                 parameters: tool.parameters,
             }).length
-            const tokens = Math.ceil(SchemaSize /4)
-            if(tool.shouldDefer && !this.discoveredTools.has(tool.name)){
+            const tokens = Math.ceil(SchemaSize / 4)
+            if (tool.shouldDefer && !this.discoveredTools.has(tool.name)) {
                 deferred += tokens
-            }else{
+            } else {
                 active += tokens
             }
         }
-        return {active, deferred, total: active + deferred}
+        return { active, deferred, total: active + deferred }
     }
 }
 
