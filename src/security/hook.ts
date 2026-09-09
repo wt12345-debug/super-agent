@@ -60,10 +60,11 @@ export class HookPipeline {
         }
         return { action: 'allow', modifiedOutput: currentOutput }
     }
+
     list(): { pre: string[], post: string[] } {
         return {
             pre: this.preHooks.map(hook => hook.name),
-            post: this.postHooks.map(hook => hook.name)
+            post: this.postHooks.map(hook => hook.name),
         }
     }
 }

@@ -35,11 +35,14 @@ import { supabasePlugin } from './plugins/supabase-plugin'
 import { createPluginCommands } from './command/plugin'
 import { createSecurityCommands } from './command/security'
 import { HookPipeline } from './security/hook'
+import { CronService } from './cron/service.js'
+import { createCronTool } from './tools/cron-tools.js'
+import { createCronCommands } from './command/cron.js'
 const qwen = createOpenAI({  // 创建 OpenAI 模型, 用于生成文本
   baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKey: process.env.DASHSCOPE_API_KEY,
 })
-const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.8-flash') : createMockModel()
+const model = process.env.DASHSCOPE_API_KEY ? qwen.chat('qwen3.8-max') : createMockModel()
 
 //------------ 注册工具-------------------
 const registry = new ToolRegistry()
@@ -119,6 +122,9 @@ hookPipeline.registerPost('bash-timestamp', (toolName, _input, output) => {
 })
 registry.setHookPipeline(hookPipeline)
 
+// ------------------- Cron ------------------------
+const cronService = new CronService() // 初始化定时任务服务
+registry.register(createCronTool(cronService)) // 注册定时任务工具
 // ------------------- Command ------------------------
 const dispatch = createDispatcher([
   ...debugCommands,
@@ -128,7 +134,8 @@ const dispatch = createDispatcher([
   ...dreamCommands,
   ...createSkillCommands(skillLoader, activeSkills),
   ...createPluginCommands(pluginManager, availablePlugins),
-  ...createSecurityCommands(registry),
+  ...createSecurityCommands(registry, hookPipeline),
+  ...createCronCommands(cronService), // 注册定时任务命令
 ])
 
 // ------------------- RAG ------------------------
@@ -151,7 +158,30 @@ async function main() {
     }
   }
 
-
+  // 定时任务
+  cronService.load()
+  cronService.setExecutor({
+    runAgentPrompt: async (prompt, timeout) => {
+      const cronMessage: ModelMessage[] = [{ role: 'user', content: prompt }]
+      const system = builder.build(makePromptCtx())
+      await agentLoop(model, registry, cronMessage, system)
+      const lastMsg = cronMessage[cronMessage.length - 1]
+      if (!lastMsg) return ('无输出')
+      if (Array.isArray(lastMsg.content)) {
+        return lastMsg.content
+          .filter((p: any) => p.type === 'text')
+          .map((p: any) => p.text)
+          .join('')
+      }
+      return String(lastMsg.content)
+    },
+    notify: (message) => {
+      console.log(` \n${message}`)
+    }
+  })
+  cronService.start() // 启动定时任务服务
+  const cronJobs = cronService.list()
+  console.log(` Cron: ${cronJobs.length} 个任务已加载`)
   // Session 持久化
   const store = new SessionStore('default')
   let messages: ModelMessage[] = []

@@ -34,22 +34,24 @@ export class ToolRegistry {
     // 已发现的延迟工具列表
     private discoveredTools = new Set<string>()
     private currentRole: Role = 'owner' // 当前角色，默认owner
-    private hookPipeline: HookPipeline | null = null // hook 管线，默认null 
+    private hookPipeline?: HookPipeline
     register(...tools: ToolDefinition[]): void {// 将来在任何地方定义的工具，都直接通过register方法注册，被存入tools Map工具列表
         for (const tool of tools) {
             this.tools.set(tool.name, tool)
         }
     }
 
-    //切换权限角色
+    // 切换权限角色
     setRole(role: Role): void {
         this.currentRole = role
     }
+
     getRole(): Role {
         return this.currentRole
     }
+
     // hook 管线
-    setHookPipeline(pipeline: HookPipeline) {
+    setHookPipeline(pipeline: HookPipeline): void {
         this.hookPipeline = pipeline
     }
     unregister(name: string): void {// 注销工具
@@ -157,10 +159,10 @@ export class ToolRegistry {
                     // Bash 风险检测
                     if (toolName === 'bash' && input?.command) {
                         const risk = classifyBashCommand(input.command)
-                        if (risk.Level === 'dangerous') {
+                        if (risk.level === 'dangerous') {
                             return `[拒绝执行] 检测到危险操作：${risk.reason}\n命令：${input.command}`
                         }
-                        if (risk.Level === 'moderate') {
+                        if (risk.level === 'moderate') {
                             console.log(`  [安全警告] 操作：${risk.reason}\n命令：${input.command}`)
                         }
                     }
@@ -228,19 +230,19 @@ export class ToolRegistry {
         return results
     }
 
-    // 可以被添加进 prompt 中的工具
+    // 可以被添加进prompt中的工具
     getActiveTools(): ToolDefinition[] {
         return this.getAll().filter(tool => {
             if (tool.shouldDefer && !this.discoveredTools.has(tool.name)) {
                 return false;
             }
-            if (canUseTool(this.currentRole, tool.name)) {
+            if (!canUseTool(this.currentRole, tool.name)) {
                 return false;
             }
+
             return true;
         });
     }
-
     // 生成延迟工具的名字列表
     getDeferredToolSummary(): string {
         const deferred = this.getAll().filter(tool => {
