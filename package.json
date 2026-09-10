@@ -1,16 +1,24 @@
 {
   "name": "super-agent",
   "version": "1.0.0",
-  "description": "",
+  "description": "基于 Vercel AI SDK 的多 Agent 命令行框架：Agent Loop、子 Agent、记忆/RAG、Cron、安全基线、MCP 工具",
   "main": "index.js",
   "scripts": {
     "start": "tsx src/index.ts",
     "init": "tsx src/index.ts init",
     "continue": "tsx src/index.ts --continue"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "multi-agent",
+    "vercel-ai-sdk",
+    "rag",
+    "cli"
+  ],
+  "author": "wtwt123123",
+  "license": "MIT",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",

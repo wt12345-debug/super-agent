@@ -1,3 +1,29 @@
+# 依赖
 /node_modules/
+node_modules/
+
+# 环境变量（含密钥，切勿提交）
 .env
+.env.local
+
+# Agent 本机运行状态（含个人数据）
+.memory/
+.sessions/
+.usage/
+.cron/
+*.db
+*.db-*
+1.js
+test.md
+readme-notes.md
 interview.md
+
+# 构建产物
+dist/
+out/
+*.tsbuildinfo
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+*.log

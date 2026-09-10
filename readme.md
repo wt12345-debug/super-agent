@@ -1,298 +1,131 @@
-# 项目起手
-1. pnpm init 初始化项目
-2. pnpm install typescript --save-dev 安装typescript
-3. tsc --init 初始化typescriptconfig.json
+# Super Agent
 
-4. pnpm add ai @ai-sdk/openai dotenv (ai 这个SDK 主要是以openai的标准用来调用openai的api)
-5. pnpm add -D tsx @types/node
+基于 [Vercel AI SDK](https://ai-sdk.dev/) 的多 Agent 命令行框架。内置 Agent Loop、四层上下文管理、工具系统、记忆/检索（RAG）、定时任务、安全基线，并支持子 Agent（sub-agent）与 MCP 工具扩展。开箱即可作为你的私有 AI 助手使用。
 
-# ai这个SDK
-- generateText 生成文本
-- streamText 流式生成文本
+## ✨ 核心特性
 
-# 进程持续
-- readline 读取用户输入
-- process.stdout.write 写入标准输出
-- process.stdin.write 写入到标准输入
-- process.exit 退出进程
+- **Agent Loop**：自研的 `think → act → observe` 交互循环，可在每轮工具调用之间插入自定义逻辑（日志、缓存、令牌统计等），相比 SDK 内置自动循环可定制性更强。
+- **多 Agent**：支持衍生子 Agent（`agents`），可配置最大生成深度与最大并发。
+- **工具系统**：文件读写、Shell、网页搜索、记忆、RAG、Cron、子 Agent 派生、工具自搜索（`tool-search`）等。
+- **四层上下文管理**：截断、时间衰减修剪、LLM 摘要压缩、Cache 优化，控制长对话的令牌消耗。
+- **记忆 + RAG**：持久化记忆（`memory`）与文档向量检索（基于 `sqlite-vec`），可把 `docs/` 下的 Markdown 自动导入知识库。
+- **定时任务（Cron）**：内置 cron 调度，可让 Agent 定时执行提示词。
+- **安全基线**：角色权限（`security`）、写文件审计、bash 输出时间戳、死循环检测与重试。
+- **MCP 客户端**：默认接入 GitHub MCP Server，可扩展其他 MCP 工具。
+- **命令系统**：`/memory`、`/rag`、`/cron`、`/agents`、`/role`、`/plugin` 等内置斜杠命令。
 
-# 模型调用三要素
-1. 模型调用：StreamConsumer  --- 解析工具调用，推理过程，token用量等多种事件
-2. 消息管理： 四层上下文管理 -- 截断，时间衰减修剪，LLM摘要压缩，Cache优化
-3. 交互循环：AgentLoop ---while(true){think -> act -> observe}  <!-- ask递归调用-->
+## 📦 环境要求
 
-# 从能聊天到能干活
-user: 南昌今天天气怎么样？
-agent:[调用get_weather工具] 今天南昌天气晴朗，温度在25摄氏度左右。
+- **Node.js** ≥ 20
+- **pnpm** ≥ 11（版本见 `package.json` 的 `packageManager` 字段）
 
-- SDK ai 提供的 streamText 方法存在自动循环机制
- 用户提问 -> 模型说要调用工具 -> 调用工具 -> 得到工具返回结果 -> 再次调用模型，将工具返回结果作为模型的输入 -> 模型返回结果给用户
+## 🚀 安装
 
- - 可定制性太差 --- 我们没办法在循环的步骤中间插入自定义的逻辑（比如：添加日志，添加缓存，添加错误处理等）
+```bash
+git clone https://github.com/<your-name>/super-agent.git
+cd super-agent
+pnpm install
+```
 
-# 上保险丝
-1. 死循环检测：连续调用相同的工具 + 相同的参数？  打断循环
-   1. 通用循环：同一个工具，相同参数，相同结果，重复调用。
-      - 将工具名 + 参数做一个确定性的JSON 序列化，再哈希加密，
-      get_weather({city:'南昌'}) ->12x12312414cadqs
-      - 滑动窗口: 比如就看最近的 30 轮有没有重复的文件指纹。
-      - 同样的输入 + 同样的输出 == 无进展  （只有调用指纹和结果指纹都相同，才认为是无进展的）
+> 注意：`better-sqlite3`、`sqlite-vec` 等为原生依赖，`pnpm install` 时会自动编译，需要本机具备 Node.js 构建环境（Windows 上一般可直接安装预编译版本）。
 
-   2. 乒乓循环：两个工具，交替调用，结果没有进展。
-   3. 轮询无进展：不断地poll检查状态，但是状态没有变化。
+## ⚙️ 配置
 
+### 方式一：交互式初始化（推荐）
 
-2. Token 预算：烧了多少token？ 超过预算？ 打断循环
-  - 把每一步的token用量都记录下来，超过预算后，就打断循环
-3. API容错：请求重试，降低模型
-   - 错误要分类，有些错误值得重试，有些错误不值得重试
- - 从能跑 到 ‘跑不挂’
+```bash
+pnpm run init
+```
 
+按向导选择模型、输入你的 DashScope API Key，会自动生成 `super-agent.config.json` 和 `.env`。
 
-# 工具系统
-搭建一个正经的系统，从工具的注册到执行到截断，每一层都要有明确的职责
+### 方式二：手动配置
 
-- 对于模型来说，Tool是什么样的存在？
-  1. 一段描述 --- 告诉模型这个工具是做什么的，什么时候该用
-  2. 一份参数 Schema -- 告诉模型这个工具需要哪些参数，参数的类型，参数的必填性等
-  3. 一个执行函数 --- 真正的逻辑
+1. 复制并编辑配置文件：
 
+   ```bash
+   cp super-agent.config.json.example super-agent.config.json
+   ```
 
-  * 在生产环境中，还要注意这个工具能否和别的工具并发执行
+2. 创建 `.env`，至少填入模型 API Key（DashScope / 阿里云百炼 通义千问兼容接口）：
 
-  ## 并发控制
-  1. 模型在一次回复中说要调用多个工具，AI SDK会并发的执行所有带有 execute 属性的工具
-  - 需要 读写锁 来保护工具的执行，防止多个工具同时执行导致的并发问题
+   ```env
+   DASHSCOPE_API_KEY=sk-xxxxx
+   ```
 
-  - 经典思路：
-  1. 只读工具：获取共享锁，可以和其他只读工具同时持有
-  2. 读写工具：获取独占锁，必须等所有其他工具执行完毕后，才能执行
+   `super-agent.config.json` 中 `model.apiKey` 支持环境变量占位符：
 
-  * 假设同时有三个工具要触发，read_file, write_file, write_file。AI SDK 会同时执行三个 execute 方法。但是在执行逻辑之前，先判断该工具是否安全。如果安全，就执行并记录当前有一个工具正在执行。如果不安全，就在队列中塞入阻塞函数，阻止当前的工具执行，直到其他工具执行完毕。才放开阻塞函数进而带来了当前工具的执行。
-  - ToolRegistry 解耦了工具定义和使用
-  - 结果截断
-  - 读写锁的并发控制
+   ```json
+   {
+     "model": {
+       "provider": "dashscope",
+       "name": "qwen3.8-flash",
+       "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+       "apiKey": "${DASHSCOPE_API_KEY}"
+     }
+   }
+   ```
 
-  ## 联网搜索
-    1. Tavily 搜索引擎  (免费1000次/月)  -- AI原生
-    2. Serper 搜索引擎  (免费2500次/月)  -- Goole 搜索引擎代理
+### 可选环境变量（增强网页搜索）
 
-    - 双引擎实现
-      1. 
-## Agent 接入MCP
+在 `.env` 中配置 `TAVILY_API_KEY` 或 `SERPER_API_KEY` 以启用联网搜索工具；配置 `GITHUB_PERSONAL_ACCESS_TOKEN` 以启用 GitHub MCP 工具。
 
-  1. 接入 GitHub MCP服务器
- - MCP 的通信协议 是 JSON RPC 2.0,,传输方式支持 stdio 和 Streamable HTTP.我们只启用 stdio 本地进程，通过标准的输入输出来收发消息
+## ▶️ 使用
 
- - 我们的Agent（client）启动一个对接 MCP Server进程，通过stdio 发JSON消息给github mcp server。github mcp server 会向我们的进程中返回JSON消息，我们通过stdout 读取这些消息。
+```bash
+# 启动新会话
+pnpm start
 
- 1. 握手  --- Client 发initialize method 给Server，Server 返回一个 JSON-RPC 2.0 的response，回复他支持的能力。
- 2. 发现工具 --- client 发 tools/list method 给Server，Server 返回所有的工具名称、描述、参数schema等信息。
- 3. 调用工具  --- 模型决定调用某个MCP 工具，client 发 tools/call method 给Server，Server会执行该工具， 返回工具的执行结果。
+# 或在项目存在继承会话时续接
+pnpm run continue
+```
 
-## ToolSearch 延迟加载
- - 把不常用的工具藏起来，模型需要的时候才按需搜索，按需发现。将Prompt 中的工具数量从几十个减到几个，同时又不损失Agent的能力。
+进入交互后直接输入问题即可，例如：
 
- - 工具分类：
-  1. 核心工具：几乎每次都要用到的工具， Read,Write,Edit,Bash,Grep,Glob
-  2. 低频工具：偶尔使用，需要的，直接打上标记 shouldDefer: true,比如 WebSearch
-      NotionSearch,所有MCP接入的工具
+```
+帮我对比 Hono、Fastify 和 Express 的性能和生态
+```
 
-  - claudeCode细节：工具被标记为 shouldDefer:true,但这个延迟工具的 Schema 如果没有超过上下文窗口的10%,那么依然不延迟加载。
+内置快捷命令：
 
-  - 打造元工具:tool_search:
-    用户输入 -> Agent ->LLM -> LLM发现无法处理问题 Agent就调用 tool_search 工具 ->找到了需要的工具就执行 -> 执行结果返回给LLM -》LLM继续回复
+| 命令 | 说明 |
+| --- | --- |
+| `/agents` | 查看子 Agent 执行记录 |
+| `/cron` | 查看/管理定时任务 |
+| `/memory` | 查看/管理记忆 |
+| `/rag` | 知识库操作 |
+| `/role [角色]` | 查看/切换权限角色 |
+| `/plugin` | 插件管理 |
+| `exit` | 退出会话 |
 
-  - 核心工具全量携带进Prompt，延迟工具也要将自己的名字和能搜到他的关键词携带进Prompt
-
-## 我们的Agent做了什么
- 1. 搭建了一个 ToolRegistry 模块，统一注册和管理所有的工具，加了截断和读写锁。
- 2. 通过MCP协议，接入了 Github MCP服务
- 3. 实现了 ToolSearch 延迟加载功能,解决了工具数量过大，模型注意力被稀释，上下文被占用的问题。
-
-
-# 上下文工程
-  ## 记忆系统(持久化上下文)  --- 对话存档
-  1. SQLite 数据库
-  2. Redis 缓存
-  3. JSON 文件
-
-  - 我们选择用JSONL （JSON Lines）格式，因为JSONL格式简单，易读，易写
-  1. 不怕崩溃，最多就是最后一条数据丢失
-  2. 可调试，直接人为打开文件，查看数据。
-  3. 零依赖，不需要安装任何库
-
-  ## 系统提示词处理  ---- 让系统提示词(system_prompt) 变得可维护，可扩展
-   - 设计了 Prompt Pipe 模式，将系统提示词(system_prompt) 分成多个部分，每个部分都有负责不同的功能
-    1. 核心规则 --- 介绍Super Agent 的核心规则功能和限制。
-    2. 工具引导 --- 介绍所有的工具，包括核心工具和延迟工具。
-    3. 会话上下文 --- 介绍当前会话的上下文，包括用户输入、模型回复、工具调用等。
-    4. 会话ID --- 用于唯一标识当前会话，方便恢复会话。
-
-    - 1234这个拼接顺序是不能打乱的，应该保证不容易发生变更的模块放在最前面，因为 LLM 的KV Cache(在预测当前token时，将上一个token的预测结果作为输入，避免重复预测)会依赖于上一个token的预测结果，所以容易变跟提示词模块如果放在前面，会导致完整的系统提示词全部无法命中缓存。
-
-  ## 上下文压缩
-    - Compaction(紧凑化)
-      1. 移除某些比较大的工具调用的内容
-      2. 去重，避免重复的上下文内容
-      3. 图片资源替换成一句 占位符
-
-    - Summarization(摘要化)
-    1. 用 LLM 来将上下文的摘要提取出来，作为新对话的上下文
-
-    * 上下文中有哪些内容？
-      1. System Prompt  （不能压缩）
-      2. 用户输入        （不能压缩）
-      3. 工具调用的结果    （需要压缩）
-      4. 历史对话记录    （需要压缩）
-
-    ### 不需要LLM 即时压缩上下文
-      - 与其等到上下文爆了再压缩，，不如一开始就少放点东西
-      1. 当前的上下文用了多少token，精确的token计算得靠API 返回 usage.prompt_tokens,但是这得再API调用完才能拿到，而在API调用之前，我们需要先估算一下token用量来判断 要不要干预
-
-      2. 工具返回的值可能会被截断，截断的阈值应该是动态的，根据上下文的使用率来调整
-        - openClaw双重约束： 单个工具结果不超多上下文窗口的 50%， 总上下文不超过上下文窗口的 75%
-
-      3. TTL 修剪 -- 时间衰减
-        - 老的工具得到的结果几乎不会被使用，所以可以被修剪掉（用户和模型的输出不能被修剪）
-
-            1. 软修剪（5分钟）  ---保留头部和尾部各1500字符，中间替换成[soft pruned]标记
-            2. 硬清除（10分钟）  --- 整个工具结果替换成占位符 [tool result expired : read_file]
-
-      * 三层防线 减少 即时LLM 压缩的压力 ：超大结果截断，清理过期内容，追踪token用量（三层过后还是超出上下文窗口则摘要化压缩），之后在判断是否需要触发摘要压缩。
-
-  ## Prompt Cache 和 成本追踪
-   - 成本：假设你已经通过三层防线 + 摘要压缩，将上下文从100k减少到了 20k，但是你的Agent 在执行50轮循环时，每次都会将这 20k 上下文传输给LLM。
-   - Prompt Cache：把请求的“前缀”缓存在服务器，下次发同样的“前缀”直接复用。（前缀越稳定，缓存效果越好）
-
-   1. 搞清楚各大模型厂商的 Cache机制
-     - 隐式缓存 ： 模型那边自动将前缀缓存起来，我们可以直接在usage 中看到返回的 cached_tokens。
-     - 显示标记模式：在请求中添加一个 cache-control:{type:'ephemeral'}标记
-     - 显示缓存创建模式：先调用 API，拿到一个cache 对象的ID，下次直接带上这个 cacheID 即可
-   2. 给 Agent加上完整的成本追踪器
-     - 让成本可见
-   3. 做一个终端面板让你可以随时看上下文占用和花费
-
- # Memory + RAG
-   ## 跨会话记忆
-     Session Memory 解决了一次对话内的连续性 --- 关掉对话后，重新打开，可以接着继续对话，因为本质就是将历史对话记录携带进Prompt
-
-    我们也不可能将几十次的对话记录都携带进Prompt，上下文会爆掉，并且噪声太多
-
-    Agent能从对话中提取值得长期保存的信息，存到文件中，下次开工时自动加载
-
-  1. 文件记忆：用 md文件 + MEMORY.md 来索引
-  2. 数据库记忆：用 SQLite 数据库 + sqlite-vec(向量检索)
-
-
-  ## RAG
-  Agent没有参与过的流程，他没有记忆，如果需要处理私域知识，就需要用 RAG 来检索，在生成
-   - 从零到一实现一个完整的RAG管线
-    1. 分块
-    2. 向量化
-    3. 混合检索： 向量搜索（70%权重） + 关键词搜索 （30%权重）（只用向量搜索可能找不全需要的信息，所以用关键词搜索来补充）
-    4. 结果注入
-
-    我能做的：【
-     1. 打造了文档分块的函数
-     2. 打造了一个向量库 （本质上就是一个数组）
-     3. 打造了一个 rag 工具 （rag_ingest）
-     】
-
-     ### 生产级别的 RAG：SQLite + sqlite-vec(向量检索) + FTS5 一个.db文件
-     - 假如有一万个文档片段，每个片段又有 原文内容，向量、来源、时间戳、等数据要存放，最直觉的做法就是存成一张表
-      1. 向量搜索慢
-      2. 关键词搜索慢
-
-
-    - openClaw：
-    1. SQLite chunks存主要的数据 (id，原文，来源，向量，时间戳)
-    2. 通过 id 关联 chunks_vec(向量索引)
-    3. 通过id 关联 chunks_fts(全文索引)
-
-    ### 记忆库的体检
-     Agent 运行一段时间后，memory文件中会堆积很多历史记忆，这个历史记忆可能会根当前的新记忆冲突，导致Agent的决策错误。
-
-    - 记忆会变坏
-     1. 记忆污染 ---- 把推测当事实
-     2. 数据爆炸 --- 记忆数据太多，噪声太多
-     3. 过期 --- 代码变更但是记忆没跟上
-     4. 冲突 --- 新旧记忆相互矛盾
-
-     - 处理方案：
-     1. 不要什么垃圾都存入记忆库
-     2. lint + TTL 分级清理
-     3. dream 自动整理(让agent自己合并重复、清理垃圾)
-
-     * claudeCode 的记忆系统有一份明确不会保存的清单：
-     1. 代码能推导就不保存
-     2. git 能查出来的就不保存
-     3. 文档明确说不保存就不保存，CLAUDE.md 中的配置
-     4. 临时性的内容不存
-
-     * 该存放：只存在对话中，其他地方推导不出来
-
-# SKILL 机制
-  - 就是一份提示词，用来约束Agent的行为，让Agent拥有一套自己的行为规范。
-
-  - Skill 不是 tool
-   1. Tool 是一个可执行函数，是一个原子操作，read_file工具不会告诉Agent应该读哪些文件的
-   2. Skill是一份知识文档，一份用Markdown格式编写的行为指导，应该注入System Prompt 中，让Agent 知道自己的行为规范
-
-   .skills/
-       code-review/
-          SKILL.md
-        research/
-          SKILL.md
-
-
-  ## 格式 YAML frontmatter 格式
-  -----------------
-  name: code-review
-  description: "以高级工程师的视角来审查代码变更"
-  --------------------
-
-  # code-review
-  ## 审查流程
-  1. 收集变更范围 从git log 中获取变更范围，包括变更的文件、变更的行号、变更的内容等
-  2. 审查变更内容 对变更的内容进行审查，判断是否有问题，是否有错误，是否有安全问题等
-
-
-  ## 写好一个skill
-  1. 做什么 (审查代码的变更)
-  2. 怎么做 (按照什么步骤，优先级来执行)
-  3. 输出什么 （报告的格式）
-
-  # plugin 机制
-    - 让别人可以给你的agent写功能
-
-    - 设计一个Plugin 接口
-      1. 你是谁(名称、版本、描述)
-      2. 你要注册的是什么(工具、skill)
-      3. 你什么时候退出(清理资源)
-
-    - 总结：
-     1. 接口契约：(PluginDefinition)定义了一个插件应该长什么样子
-     2. API隔离： （PluginApi）将api暴露给插件，让每一个插件都能独立借助api来注册自己的工具，不需要agent自己注册工具
-     3. 命名隔离：（PluginName__ToolName） 防止不同插件的工具名冲突
-     4. 生命周期管理：(activate，destory)插件的加载、卸载、激活、停用等生命周期管理
-
-     * skill是往 System Prompt 中注入知识，改变的是Agent怎么思考。Plugin 是往Agent执行过程中注入工具，改变的是Agent能做什么。
-
-     * plugin 就是针对某一个独立场景扩展的一套工具。比如
-
-    # 权限系统 + HOOK 管线
-     - 角色权限 -- 谁能用什么工具
-     - Bash风险监测 -- 拦截危险命令
-     - Hook管线 -- 在工具执行前后，插入自定义的代码，比如日志、监控、权限校验等
-
-     ## 角色权限
-      1. owner -- 能使用所有的工具，包括Bash
-      2. collaborator -- 大部分工具都能用，但是不能用Bash
-      3. guest -- 只能用读写工具（查天气，读文件，做搜索）
-
-      ### Bash 风险监测
-      即使是 owner 角色，也不能用危险的 Bash 命令，比如 rm -rf /、sudo、curl xxx | sh 等
-
-      ### Hook管线
-        - 在工具执行前后，插入一个钩子函数，来执行一些自定义的逻辑
+## 📁 配置参考（`super-agent.config.json`）
+
+| 字段 | 说明 |
+| --- | --- |
+| `model` | 模型提供方、名称、`baseURL`、`apiKey`（支持 `${ENV}` 占位） |
+| `agents` | 子 Agent：`maxSpawnDepth`（最大生成深度）、`maxConcurrent`（最大并发）、`defaultTimeout` |
+| `security` | `defaultRole`（默认权限角色）、`auditLog`（写文件审计）、`bashTimestamp`（bash 输出加时间戳） |
+| `memory` / `rag` / `cron` | 记忆、RAG、定时任务开关与数据目录 |
+| `plugins` | 扩展插件列表（如 `supabase`，默认关闭） |
+
+## 🗂️ 目录结构
+
+```
+src/
+  agent/       Agent Loop、死循环检测、重试
+  context/     提示词构建、上下文压缩与防御
+  tools/       工具系统、MCP 客户端、工具自搜索
+  agents/      子 Agent 注册与派生
+  memory/      持久化记忆
+  rag/         向量库、分块、检索
+  security/    角色权限、Hook 管线、命令分类
+  cron/        定时任务
+  skills/      技能加载
+  plugins/     插件管理
+  config/      配置加载与初始化向导
+  command/     内置斜杠命令
+```
+
+## 📄 License
+
+[MIT](LICENSE)

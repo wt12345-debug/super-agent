@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "model": {
+    "provider": "dashscope",
+    "name": "qwen3.8-flash",
+    "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "apiKey": "${DASHSCOPE_API_KEY}"
+  },
+  "plugins": [
+    {
+      "name": "supabase",
+      "enabled": false,
+      "config": {}
+    }
+  ],
+  "channels": {},
+  "agents": {
+    "maxSpawnDepth": 1,
+    "maxConcurrent": 3,
+    "defaultTimeout": 60000
+  },
+  "security": {
+    "defaultRole": "developer",
+    "auditLog": true,
+    "bashTimestamp": true
+  },
+  "memory": {
+    "dataDir": "."
+  },
+  "rag": {
+    "enabled": true,
+    "docsDir": "docs"
+  },
+  "cron": {
+    "enabled": true,
+    "dataDir": "."
+  },
+  "session": {
+    "id": "default"
+  },
+  "usage": {
+    "trackingFile": ".usage/today.jsonl"
+  }
+}
