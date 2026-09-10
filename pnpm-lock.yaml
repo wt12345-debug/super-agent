@@ -209,7 +209,7 @@ importers:
     dependencies:
       '@ai-sdk/openai':
         specifier: ^4.0.46
-        version: 4.0.46(zod@4.4.3)
+        version: 4.0.46(zod@4.5.4)
       '@modelcontextprotocol/server-github':
         specifier: ^2025.4.8
         version: 2025.4.8
@@ -218,7 +218,7 @@ importers:
         version: 5.0.6
       ai:
         specifier: ^7.0.77
-        version: 7.0.77(zod@4.4.3)
+        version: 7.0.77(zod@4.5.4)
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
@@ -237,6 +237,9 @@ importers:
       turndown:
         specifier: ^7.2.4
         version: 7.2.4
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^9.6.0
@@ -906,32 +909,32 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.5.4:
+    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
 snapshots:
 
-  '@ai-sdk/gateway@4.0.62(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.62(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.29(zod@4.4.3)
+      '@ai-sdk/provider-utils': 5.0.29(zod@4.5.4)
       '@vercel/oidc': 3.2.0
-      zod: 4.4.3
+      zod: 4.5.4
 
-  '@ai-sdk/openai@4.0.46(zod@4.4.3)':
+  '@ai-sdk/openai@4.0.46(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.29(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.29(zod@4.5.4)
+      zod: 4.5.4
 
-  '@ai-sdk/provider-utils@5.0.29(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.29(zod@4.5.4)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.29.0
-      zod: 4.4.3
+      zod: 4.5.4
 
   '@ai-sdk/provider@4.0.7':
     dependencies:
@@ -1130,12 +1133,12 @@ snapshots:
 
   '@workflow/serde@4.1.0': {}
 
-  ai@7.0.77(zod@4.4.3):
+  ai@7.0.77(zod@4.5.4):
     dependencies:
-      '@ai-sdk/gateway': 4.0.62(zod@4.4.3)
+      '@ai-sdk/gateway': 4.0.62(zod@4.5.4)
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.29(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.29(zod@4.5.4)
+      zod: 4.5.4
 
   asynckit@0.4.0: {}
 
@@ -1446,4 +1449,4 @@ snapshots:
 
   zod@3.25.76: {}
 
-  zod@4.4.3: {}
+  zod@4.5.4: {}

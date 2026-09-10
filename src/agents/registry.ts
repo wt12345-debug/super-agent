@@ -18,8 +18,8 @@ export class SubAgentRegistry {
         return `sub-${++this.idCounter}-${Date.now().toString(36).slice(-4)}`
     }
     canSpawn(currentDepth: number): { ok: boolean, reason?: string } {
-        if (currentDepth >= this.config.maxASpawnDepth) {
-            return { ok: false, reason: `已达到最大嵌套深度 ${this.config.maxASpawnDepth}` }
+        if (currentDepth >= this.config.maxSpawnDepth) {
+            return { ok: false, reason: `已达到最大嵌套深度 ${this.config.maxSpawnDepth}` }
         }
         const activeCount = this.getActiveRuns().length;
         if (activeCount >= this.config.maxConcurrent) {
@@ -37,7 +37,24 @@ export class SubAgentRegistry {
         run.finishedAt = new Date().toISOString()
         run.result = result
     }
+    fail(id: string, error: string): void {  // 强行失败一个子Agent
+        const run = this.runs.get(id)
+        if (!run) return
+        run.status = 'error'
+        run.finishedAt = new Date().toISOString()
+        run.error = error
+    }
+    get(id: string): SubAgentRun | undefined {
+        return this.runs.get(id)
+    }
     getActiveRuns(): SubAgentRun[] {
         return [...this.runs.values()].filter(r => r.status === 'running')
+    }
+    getAllRuns(): SubAgentRun[] {
+        return Array.from(this.runs.values())
+    }
+
+    getConfig(): SubAgentConfig {
+        return this.config
     }
 }

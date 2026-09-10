@@ -213,6 +213,26 @@ export class ToolRegistry {
         }
         return result;
     }
+    toAISDKFormatUnlocked(excludeTools?: Set<string>): Record<string, any> {
+        const result: Record<string, any> = {};
+        const activeTools = this.getActiveTools()
+            .filter(t => !excludeTools || !excludeTools.has(t.name));
+
+        for (const tool of activeTools) {
+            const maxChars = tool.maxResultChars;
+            const executeFn = tool.execute;
+            result[tool.name] = {
+                description: tool.description,
+                inputSchema: jsonSchema(tool.parameters as any),
+                execute: async (input: any) => {
+                    const raw = await executeFn(input);
+                    const text = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
+                    return truncateResult(text, maxChars);
+                },
+            };
+        }
+        return result;
+    }
     //搜索工具
     searchTools(query: string): ToolDefinition[] {
         const q = query.trim() //'mcp__github__list__issues,mcp__github__create__issue'
