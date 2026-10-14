@@ -16,6 +16,43 @@ export interface RetryOptions {
   onRetry?: (error: unknown, attempt: number, delayMs: number) => void;
 }
 
+/** 明确可重试的 HTTP 状态码：请求超时、限流、站点过载 */
+const RETRYABLE_STATUS_CODES = new Set([408, 429, 529]);
+
+/**
+ * 常见的网络 / Socket / 网关层瞬时错误码（覆盖 Node、undici 及部分 HTTP 客户端）
+ * 提到模块作用域，避免每次判断都重新构造数组
+ */
+const RETRYABLE_NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EAI_AGAIN',
+  'ERR_SOCKET_CONNECTION_TIMEOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+/** 错误消息中出现这些关键字，通常意味着网络抖动或流式中断，可安全重试（统一小写比较） */
+const RETRYABLE_MESSAGE_HINTS = [
+  'econnreset',
+  'econnaborted',
+  'epipe',
+  'etimedout',
+  'timeout',
+  'fetch failed',
+  'network',
+  'socket hang up',
+  'connection reset',
+];
+
 /**
  * 判断当前异常是否属于可重试的暂时性错误
  *
@@ -25,7 +62,7 @@ export interface RetryOptions {
  *    - 429 (Too Many Requests), 529 (Site Overloaded), 408 (Request Timeout)
  *    - 5xx (500~599 服务端瞬时故障或网关错误)
  *    - 4xx 客户端错误（如 400 参数错误、401/403 鉴权失败）默认不可重试
- * 3. 常见网络与 Socket 级瞬时异常（ECONNRESET, ETIMEDOUT, EPIPE, fetch failed 等）
+ * 3. 常见网络与 Socket 级瞬时异常（见 RETRYABLE_NETWORK_CODES）
  * 4. 大模型流式输出中断（No output generated 等）
  */
 export function isRetryable(error: unknown): boolean {
@@ -64,7 +101,7 @@ export function isRetryable(error: unknown): boolean {
 
   if (status !== null) {
     // 限流、过载、超时错误，必然可重试
-    if ([408, 429, 529].includes(status)) return true;
+    if (RETRYABLE_STATUS_CODES.has(status)) return true;
     // 5xx 服务端或模型供应商暂时性故障，可重试
     if (status >= 500 && status < 600) return true;
     // 4xx 客户端请求错误（如提示词过长被拒、API Key 无效），不可重试
@@ -72,32 +109,13 @@ export function isRetryable(error: unknown): boolean {
   }
 
   // 3. 系统级与网络级连接错误检测（优先比对标准 error.code）
-  const networkCodes = [
-    'ECONNRESET',
-    'ECONNREFUSED',
-    'ETIMEDOUT',
-    'EPIPE',
-    'ENOTFOUND',
-    'EAI_AGAIN',
-    'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_SOCKET',
-  ];
-  if (code && networkCodes.includes(code.toUpperCase())) {
+  if (code && RETRYABLE_NETWORK_CODES.has(code.toUpperCase())) {
     return true;
   }
 
   // 4. 常见网络故障与流式中断的特征关键字匹配
   const lowerMsg = message.toLowerCase();
-  if (
-    lowerMsg.includes('econnreset') ||
-    lowerMsg.includes('epipe') ||
-    lowerMsg.includes('etimedout') ||
-    lowerMsg.includes('timeout') ||
-    lowerMsg.includes('fetch failed') ||
-    lowerMsg.includes('network') ||
-    lowerMsg.includes('socket hang up') ||
-    lowerMsg.includes('connection reset')
-  ) {
+  if (RETRYABLE_MESSAGE_HINTS.some((hint) => lowerMsg.includes(hint))) {
     return true;
   }
 
@@ -110,7 +128,7 @@ export function isRetryable(error: unknown): boolean {
 }
 
 /**
- * 计算带随机抖动的指数退避延迟时间（Full Jitter / Symmetrical Jitter）
+ * 计算带随机抖动的指数退避延迟时间（对称抖动 / Symmetrical Jitter）
  *
  * 公式：
  *   delay = min(baseMs * 2^(attempt - 1), maxMs)
@@ -126,7 +144,7 @@ export function calculateDelay(attempt: number, baseMs = 500, maxMs = 30000): nu
   const safeBaseMs = Math.max(0, baseMs);
   const safeMaxMs = Math.max(safeBaseMs, maxMs);
 
-  // 计算指数级增长时长
+  // 计算指数级增长时长（attempt 很大时会溢出为 Infinity，取 min 后自然收敛到封顶值）
   const exponential = safeBaseMs * Math.pow(2, safeAttempt - 1);
   const capped = Math.min(exponential, safeMaxMs);
 
@@ -148,6 +166,10 @@ export function sleep(ms: number): Promise<void> {
 /**
  * 带有自动退避重试执行的高阶函数包装器
  *
+ * 说明：agent/loop.ts 因需要在重试时重置流式状态（hasToolCall / fullText 等），
+ * 直接组合使用 isRetryable、calculateDelay、sleep 三个原语；本包装器适用于
+ * 无额外状态的普通异步操作。
+ *
  * @param fn 需要执行的异步操作函数
  * @param options 重试配置选项
  * @returns 执行成功的结果 Promise
@@ -164,6 +186,7 @@ export async function withRetry<T>(
     onRetry,
   } = options;
 
+  const retryLimit = Math.max(0, Math.floor(maxRetries));
   let attempt = 0;
 
   while (true) {
@@ -171,7 +194,7 @@ export async function withRetry<T>(
       return await fn();
     } catch (error) {
       attempt++;
-      if (attempt > maxRetries || !shouldRetry(error)) {
+      if (attempt > retryLimit || !shouldRetry(error)) {
         throw error;
       }
 
