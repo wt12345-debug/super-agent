@@ -86,7 +86,8 @@ export class PluginManager {
       tools: registeredTools
     });
 
-    return registeredTools
+    // 返回副本，避免调用方修改卸载时使用的工具清单。
+    return [...registeredTools];
   }
 
   /** 卸载插件：先触发 destroy 钩子释放资源，再从注册表移除它的全部工具 */
@@ -121,7 +122,8 @@ export class PluginManager {
   }
 
   get(name: string): LoadedPlugin | undefined {
-    return this.plugins.get(name);
+    const plugin = this.plugins.get(name);
+    return plugin ? { ...plugin, tools: [...plugin.tools] } : undefined;
   }
 
   list(): Array<{ name: string; version: string; description: string; tools: string[] }> {
@@ -129,7 +131,7 @@ export class PluginManager {
       name: p.definition.name,
       version: p.definition.version,
       description: p.definition.description,
-      tools: p.tools,
+      tools: [...p.tools],
     }));
   }
 
