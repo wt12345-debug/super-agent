@@ -1,5 +1,6 @@
 export type ScheduleType = 'cron' | 'interval' | 'once';
 
+/** 可持久化的任务配置；定时器句柄与执行状态保存在 CronJobState 中。 */
 export interface CronJobConfig {
   id: string;                 // 任务唯一标识
   name: string;               // 任务显示名称
@@ -9,13 +10,13 @@ export interface CronJobConfig {
   enabled: boolean;           // 是否启用
   payload: JobPayload;        // 执行内容（agent prompt 或 handler 回调）
   timeout?: number;           // 单次执行超时，单位 ms，默认 60000
-  maxRetries?: number;        // 连续失败多少次后自动禁用，默认 3
+  maxRetries?: number;        // 连续失败多少次后自动禁用，默认 3；不代表单次执行内的重试次数
   source: 'config' | 'runtime'; // 来源：config 不可删，runtime 可增删
 }
 
 export type JobPayload =
   | { type: 'agent'; prompt: string }    // 把 prompt 交给 Agent Loop 执行
-  | { type: 'handler'; handler: string }; // 调用插件注册的 handler 函数
+  | { type: 'handler'; handler: string }; // 当前仅内置 random-quote；其他名称返回待实现提示
 
 export interface RunLog {
   jobId: string;              // 所属任务 ID
@@ -26,6 +27,7 @@ export interface RunLog {
   error?: string;             // 错误信息
 }
 
+/** 进程内运行状态，不应直接序列化到任务配置文件。 */
 export interface CronJobState {
   config: CronJobConfig;      // 任务配置
   timerId: ReturnType<typeof setTimeout> | null; // 当前定时器句柄
