@@ -2,9 +2,7 @@ import fs from 'node:fs';
 import type { ToolDefinition } from './register.js';
 import { chunkDocument } from '../rag/chunker.js';
 import { embed, type EmbeddingFn } from '../rag/embedder.js';
-import { VectorStore } from '../rag/store.js';
-import { hybridSearch } from '../rag/search.js';  //导入混合检索函数
-import { SqliteVectorStore } from '../rag/sqlite-store.js';
+import type { SqliteVectorStore } from '../rag/sqlite-store.js';
 export function createRagTools(vectorStore: SqliteVectorStore, embedFn: EmbeddingFn): ToolDefinition[] {
   const ragIngestTool: ToolDefinition = {
     name: 'rag_ingest',
@@ -37,7 +35,7 @@ export function createRagTools(vectorStore: SqliteVectorStore, embedFn: Embeddin
       type: 'object',
       properties: {
         query: { type: 'string', description: '搜索查询' },
-        top_k: { type: 'number', description: '返回结果数量（默认 5）' },
+        top_k: { type: 'integer', minimum: 1, description: '返回结果数量（默认 5）' },
       },
       required: ['query'],
       additionalProperties: false,
@@ -45,9 +43,12 @@ export function createRagTools(vectorStore: SqliteVectorStore, embedFn: Embeddin
     isConcurrencySafe: true,
     isReadOnly: true,
     execute: async ({ query, top_k }: { query: string; top_k?: number }) => {
+      // execute 也可能被直接调用，不能仅依赖工具参数 schema 校验。
+      if (top_k !== undefined && (!Number.isSafeInteger(top_k) || top_k < 1)) {
+        return '搜索失败: top_k 必须为正的安全整数。';
+      }
       if (vectorStore.size() === 0) return '知识库为空，请先使用 rag_ingest 导入文档。';
-      // const results = await hybridSearch(vectorStore, embedFn, query, top_k || 5);
-      const results = await vectorStore.hybridSearch( embedFn, query, top_k || 5);
+      const results = await vectorStore.hybridSearch(embedFn, query, top_k ?? 5);
       if (results.length === 0) return `没有找到与 "${query}" 相关的内容。`;
       return results.map((r, i: number) =>
         `[${i + 1}] 来源: ${r.chunk.source} | 综合分: ${r.score.toFixed(3)} (向量: ${r.vectorScore.toFixed(2)}, 关键词: ${r.keywordScore.toFixed(2)})\n${r.chunk.text.slice(0, 500)}`
