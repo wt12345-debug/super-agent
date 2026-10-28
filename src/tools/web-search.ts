@@ -35,6 +35,8 @@ export const tavilySearchTool: ToolDefinition = {
                 max_results,
                 include_answer: true,
             }),
+            // 搜索请求同样需要超时，避免供应商无响应时长期占用工具执行。
+            signal: AbortSignal.timeout(15000),
         })
         if (!res.ok) return `[web_search] Tavily请求失败，状态码：${res.status}`
 
@@ -80,6 +82,7 @@ export const serperSearchTool: ToolDefinition = {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ q: query, num: max_results }),
+            signal: AbortSignal.timeout(15000),
         });
 
         if (!res.ok) return `[web_search] 请求失败: HTTP ${res.status}`;
