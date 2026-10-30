@@ -76,11 +76,20 @@ export function createSkillCommands(skillLoader: SkillLoader, activeSkills: Set<
             const currentSystem = ctx.builder.build(ctx.makePromptCtx());
             const beforeLen = ctx.messages.length;
 
-            agentLoop(ctx.model, ctx.registry, ctx.messages, currentSystem, ctx.tracker).then(() => {
-                const newMessages = ctx.messages.slice(beforeLen);
-                const now = Date.now();
-                for (let i = beforeLen; i < ctx.messages.length; i++) ctx.timestamps.set(i, now);
-                ctx.sessionStore.appendAll(newMessages);
+            agentLoop(ctx.model, ctx.registry, ctx.messages, currentSystem, ctx.tracker).catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error);
+                console.error(`\n[skills] 执行 ${name} 失败: ${message}\n`);
+            }).finally(() => {
+                // 执行失败时也保存已产生的消息，并恢复交互提示。
+                try {
+                    const newMessages = ctx.messages.slice(beforeLen);
+                    const now = Date.now();
+                    for (let i = beforeLen; i < ctx.messages.length; i++) ctx.timestamps.set(i, now);
+                    ctx.sessionStore.appendAll(newMessages);
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    console.error(`\n[skills] 保存会话失败: ${message}\n`);
+                }
                 ctx.ask();
             });
 
